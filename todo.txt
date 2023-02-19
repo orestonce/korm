@@ -1,0 +1,72 @@
+1. [x] time.Time 支持
+2. [x] 增删改查
+3. [x] 查询扩展
+    * [x] Exist/Count查询
+4. [x] 自动添加列, 自动删除列
+5. [x] AND/OR 条件支持, 条件组合关系支持
+6. [x] 多表 left join
+    * [x] 声明
+        * korm:"join:this.UserId==other.Id"
+    * [x] 生成第一层的join对象
+    * [x] 第一层的join对象支持查询操作
+        * [x] where
+        * [x] order by
+    * [x] 第一层的join对象可以被正确加载到内存
+        * [x] 只查询特定的列, 不用查询全部的列数据
+        * [x] 对scan逻辑进行更改, 支持动态的多个字段
+        * [x] 实现join对象的自动scan, 填充
+    * [x] 多层join对象实现
+    * [x] order by 优化, OrderBy_FieldName().ASC()
+7. [x] offset limit优化
+    * [x] 测试 SQL_CALC_FOUND_ROWS 在多线程的情况下的正确用法 db.Conn
+    * [x] 新增 SetPageLimit(pageSize, pageNo) 函数
+    * [x] 返回匹配到的列的数量: select SQL_CALC_FOUND_ROWS HashId from ProxyCache_D limit 2; SELECT FOUND_ROWS();
+8. [*] 查询接口新增 MustRun_ResultMap
+9. [x] string in (xx, xx, xx)
+    * [x] 支持空的 in()
+10. [x] 适配mysql,sqlite
+    * [x] pragma table_info ('tb3');
+    * [x] 设计通用的测试用例, 把已有功能在mysql下全部测试一遍 github.com/go-sql-driver/mysql
+    * [x] 适配sqlite github.com/glebarez/go-sqlite
+    * [x] SQL_CALC_FOUND_ROWS 在sqlite下的实现
+11. [x] 接口名字优化
+    * [x] NewQuery() -> Query()
+    * [x] CondWhere_xxx() -> Where_xxx()
+    * [x] 增加insert 接口
+    * [x] 增加更新全部的字段的Update接口 MustUpdateBy_RoomId
+    * [x] bool 处理逻辑似乎不对, 空/false/true三态. 优化, bool类型使用枚举类型
+        * sqlite 实现: https://cloud.tencent.com/developer/ask/sof/58570
+        * mysql 实现: https://www.cnblogs.com/dinghailong128/p/12751948.html
+12. [x] '[]byte' 类型的字段储存优化
+13. [x] 字段忽略功能, korm:"-"
+14. [x] 支持生成返回Error/ErrMsg状态的接口, 方便客户端使用
+    * [x] initTable 报错
+    * [x] argParseFn 报错
+    * [x] MustRun 报错
+        * [x] delete
+        * [x] set/insert
+        * [x] Run_Count
+        * [x] Run_Exist
+        * [x] update
+        * [x] MustRun_ResultOne
+        * [x] MustRun_ResultOne2
+        * [x] MustRun_ResultList
+        * [x] MustRun_ResultMap
+        * [x] MustRun_ResultListWithTotalMatch
+        * [x] KORM_MustNewDbMysql
+15. [x] 支持多字段主键: korm:"primary"
+    * [x] 申明
+    * [x] MustRun_ResultMap
+    * [x] 建表, 对比表
+16. [x] Count/Exist支持LeftJoin
+17. [x] 支持索引, korm:"index:Id,Name;index:Name,Id"
+    * [x] 目前只支持mysql创建索引
+    * [x] 声明, 解析
+        * korm:"index:Id,Name;index:Id"
+    * [x] 添加索引, korm_idx_{num}_{tableName}
+    * [x] 删除索引, korm_idx_{num}_{tableName}
+    * [x] sqlite支持创建索引、删除索引
+18. [ ] 适配postgresql
+19. [ ] 支持在tag里设置字段的默认值
+20. [ ] 支持groupBy
+21. [ ] 对列进行函数调用, length(), sum()
