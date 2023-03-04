@@ -393,6 +393,7 @@ func (this *` + name + `) Where` + `_` + f.FiledName + `() *` + ftName + `{
 			writeTypeAndCond()
 			addFn("Equal", "=?")
 			addFn("NotEqual", "!=?")
+			addFn("Greater", ">?")
 			addFn("GreaterOrEqual", ">=?")
 			addFn("Less", "<?")
 			addFn("LessOrEqual", "<=?")
