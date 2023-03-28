@@ -66,7 +66,21 @@
     * [x] 添加索引, korm_idx_{num}_{tableName}
     * [x] 删除索引, korm_idx_{num}_{tableName}
     * [x] sqlite支持创建索引、删除索引
-18. [ ] 适配postgresql
-19. [ ] 支持在tag里设置字段的默认值
-20. [ ] 支持groupBy
-21. [ ] 对列进行函数调用, length(), sum()
+18. [x] 支持视图定义、查询
+    * [x] 定义视图
+    * [x] 生成Select
+        * [x] 字段Where
+        * [x] OrderBy, LimitOffset
+        * [x] MustRun_ResultOne、Count、Exist
+        * [ ] Select 后的字段申明、解析
+        * [x] Run_ResultOne2
+        * [x] Run_ResultList
+        * [x] Run_ResultMap
+        * [x] 主键补齐
+        * [x] Run_ResultListWithTotalMatch
+        * [x] 删除 korm.InitTable(View)
+    * [x] 测试以上代码的正确性
+19. [ ] 适配postgresql
+20. [ ] 支持在tag里设置字段的默认值
+21. [ ] 支持groupBy
+22. [ ] 对列进行函数调用, length(), sum()

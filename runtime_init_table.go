@@ -201,11 +201,8 @@ func InitTable(req InitTableReq) (err error) {
 			found = true
 			foundFieldList[idx] = true
 			expectedType := expectTypeMap[f.Type]
-			if req.Mode == InitModeSqlite && f.IsPrimaryKey && expectedType == "char(255)" && idx > 0 {
-				expectedType = "longblob"
-			}
 			if expectedType == "" || def.Type != expectedType {
-				return errors.New("field type changed1 " + f.Name)
+				return errors.New("field type changed1 " + f.Name + " " + strconv.Quote(expectedType) + " " + strconv.Quote(def.Type))
 			}
 		}
 		if found == false {

@@ -34,6 +34,10 @@ func ` + prefix + this.writeStr_IfMustValue_Equal(true, "Must") + `NewDbMysql(re
 `)
 	this.buf.WriteString(this.writeErrDecl_IfMust())
 	for _, name := range this.req.ModelNameList {
+		st := this.structMap[name]
+		if st.IsView {
+			continue
+		}
 		this.AddImportPath("github.com/orestonce/korm")
 
 		this.buf.WriteString(`err = korm.InitTable(korm.InitTableReq{
@@ -41,7 +45,6 @@ func ` + prefix + this.writeStr_IfMustValue_Equal(true, "Must") + `NewDbMysql(re
 		TableName: ` + strconv.Quote(name) + `,
 		FieldList: []korm.FieldSqlDefine{
 `)
-		st := this.structMap[name]
 		for _, f := range st.FieldList {
 			if f.IsStarExpr {
 				continue

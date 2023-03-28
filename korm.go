@@ -43,10 +43,13 @@ func MustCreateCode(req MustCreateCode_Req) {
 	source.AddFunc_DbType()
 	source.AddFunc_InitTable()
 	source.writeScanInfoCode()
-	source.addLeftJoin()
 	for _, name := range req.ModelNameList {
 		info := source.structMap[name]
 		source.AddDeclear_ORM_Type(info)
+		if info.IsView {
+			source.AddFunc_View_Select(info)
+			continue
+		}
 		source.AddFunc_fillSelectFieldNameList(info)
 		source.AddFunc_ORM_Create(info)
 
@@ -63,12 +66,48 @@ func MustCreateCode(req MustCreateCode_Req) {
 }
 
 type StructType struct {
-	Name      string
-	FieldList []StructFieldType
+	Name                 string
+	FieldList            []StructFieldType
+	IsView               bool
+	ViewBeginD           string
+	View_VarNameCallList [][2]string
+	View_HasCallMap      map[string]string
+}
+
+func (info StructType) View_getQueryNode_ByFieldName(fn string) (nodeName string, fieldName2 string) {
+	for _, one := range info.FieldList {
+		if fn != one.FiledName {
+			continue
+		}
+		if len(one.ViewJoinPath) == 0 { // 自己这一级的, 未改名
+			return "this.query", one.FiledName
+		} else if len(one.ViewJoinPath) == 1 { // 自己这一级的, 已改名
+			return "this.query", one.ViewJoinPath[0]
+		}
+		call := one.ViewGetJoinObj_CallDeclear()
+		varName := info.View_HasCallMap[call]
+		return "this." + varName, one.ViewJoinPath[len(one.ViewJoinPath)-1]
+	}
+	panic("getQueryNode_ByFieldName " + fn)
 }
 
 func (t StructType) GetOrmTypeName() string {
 	return prefix + t.Name
+}
+
+func (t StructType) GetDotName() string {
+	if t.IsView {
+		return t.ViewBeginD
+	}
+	return t.Name
+}
+
+func (info StructType) isD_CallFillNameList() string {
+	if info.IsView {
+		return ""
+	}
+	return info.getFNName_fillSelectFieldNameList() + `(this.joinNode)
+`
 }
 
 func quoteForSql(v string) string {
@@ -83,6 +122,7 @@ type StructFieldType struct {
 	LjField_This     string // left join
 	LjFiled_Other    string // left join
 	IndexList        [][]string
+	ViewJoinPath     []string
 }
 
 func (this StructFieldType) IsStringOrIntUintType() bool {
@@ -176,9 +216,13 @@ func listStructType(pkg *ast.Package, nameList []string) (list []StructType) {
 				skipThisField := false
 				reObj := regexp.MustCompile(`^this\.(\w+) *== *other\.(\w+)$`)
 				for _, tag := range strings.Split(reflect.StructTag(unquoteTag).Get("korm"), `;`) {
+					if skipThisField {
+						break
+					}
+					tagPanicMessage := `MustParsePkg model.Name, field.FiledName: ` + info.Name + `,` + info.Name + ": " + strconv.Quote(tag)
 					tagPrefix := strings.Split(tag, ":")
 					if len(tagPrefix) > 2 {
-						panic(`MustParsePkg.0 ` + strconv.Quote(tag))
+						panic(tagPanicMessage)
 					}
 					switch tagPrefix[0] {
 					case "":
@@ -191,15 +235,26 @@ func listStructType(pkg *ast.Package, nameList []string) (list []StructType) {
 					case "join":
 						groupList := reObj.FindStringSubmatch(tagPrefix[1])
 						if len(groupList) == 0 || thisFiled.LjField_This != "" {
-							panic(`MustParsePkg model.Name, field.FiledName: ` + one.Names[0].Name + `,` + info.Name + ": " + strconv.Quote(tag))
+							panic(tagPanicMessage)
 						}
 						thisFiled.LjField_This = groupList[1]
 						thisFiled.LjFiled_Other = groupList[2]
+					case "view":
+						info.IsView = true
+						if len(tagPrefix) != 2 {
+							panic(tagPanicMessage)
+						}
+						info.ViewBeginD = tagPrefix[1]
+					case "path":
+						if len(tagPrefix) != 2 {
+							panic(tagPanicMessage)
+						}
+						thisFiled.ViewJoinPath = strings.Split(strings.TrimSpace(tagPrefix[1]), ".")
 					default:
 						panic(`MustParsePkg.default model.Name, field.FiledName: ` + one.Names[0].Name + `,` + info.Name + ": " + strconv.Quote(tag))
 					}
 				}
-				if skipThisField {
+				if skipThisField || info.Name == "_" {
 					continue
 				}
 				tn, ok := one.Type.(*ast.Ident)
@@ -243,6 +298,32 @@ func listStructType(pkg *ast.Package, nameList []string) (list []StructType) {
 			info.FieldList[0].IsPrimaryKeyPart = true
 			checkIndexListInStruct(info)
 			list = append(list, info)
+		}
+	}
+	for idx := range list {
+		info := &list[idx]
+		if info.IsView == false {
+			continue
+		}
+		var infoD *StructType
+		for _, infoDp := range list {
+			if infoDp.Name == info.ViewBeginD {
+				infoD = &infoDp
+				break
+			}
+		}
+		if infoD == nil {
+			panic("xxxxx " + info.ViewBeginD)
+		}
+		for idx0, f1 := range infoD.FieldList {
+			if f1.IsPrimaryKeyPart == false {
+				break
+			}
+			f0 := &info.FieldList[idx0]
+			if f0.FiledName != f1.FiledName && (len(f0.ViewJoinPath) != 1 || f0.ViewJoinPath[0] != f1.FiledName) {
+				panic("miss primary key in view " + strconv.Quote(info.Name))
+			}
+			f0.IsPrimaryKeyPart = true
 		}
 	}
 	return list
@@ -423,7 +504,7 @@ func (this *GoSourceWriter) writeCheckErr(s string) string {
 	} else {
 		data += `return ` + s + ` err`
 	}
-	return data + "\n}\n"
+	return data + "\n}"
 }
 
 func (this *GoSourceWriter) writeReturn(s string) string {
@@ -442,6 +523,182 @@ func (this *GoSourceWriter) writeErrDecl_IfMust() string {
 		return ""
 	}
 	return "var err error\n"
+}
+
+func (this *GoSourceWriter) buildFn_Count_Exist(tName string, infoDotName string) {
+	this.buf.WriteString(`
+func (this * ` + tName + `) ` + this.writeFnDecl("Run_Count", "cnt int64"))
+	this.buf.WriteString(`result, err := this.supper.ExecRawQuery(korm.BuildQueryStringCountExist(korm.BuildQueryStringCountExist_Req{
+MainTableName: ` + strconv.Quote(infoDotName) + `,
+MainTableNameAlias: this.joinNode.TableName,
+RootInfoBufLeftJoin: &this.joinNode.Root.BufLeftJoin,
+BufWhere: &this.bufWhere,
+IsExist: false,
+}), this.argsWhere...)
+` + this.writeCheckErr("0, ") + `
+	cnt, err = korm.ScanCount(result)
+` + this.writeCheckErr("0, ") + `
+	return cnt` + this.writeStr_IfMustValue_Equal(false, ", nil") + `
+}
+
+func (this *` + tName + `) ` + this.writeFnDecl("Run_Exist", "exist bool") + `
+	result, err := this.supper.ExecRawQuery(korm.BuildQueryStringCountExist(korm.BuildQueryStringCountExist_Req{
+		MainTableName: ` + strconv.Quote(infoDotName) + `,
+		MainTableNameAlias: this.joinNode.TableName,
+		RootInfoBufLeftJoin: &this.joinNode.Root.BufLeftJoin,
+		BufWhere: &this.bufWhere,
+		IsExist: true,
+	}), this.argsWhere...)
+` + this.writeCheckErr("false, ") + `
+	exist, err = korm.ScanExist(result)
+` + this.writeCheckErr("false, ") + `
+return exist` + this.writeStr_IfMustValue_Equal(false, ",nil") + `
+}
+`)
+}
+
+func (this *GoSourceWriter) buildFn_ResultOne(tName string, infoDotName string) {
+	this.buf.WriteString(`func (this *` + tName + `)` + this.writeFnDecl("Run_ResultOne", `info `+infoDotName))
+	if this.req.GenMustFn {
+		this.buf.WriteString(`info, _ = this.MustRun_ResultOne2()
+	return info
+`)
+	} else {
+		this.buf.WriteString(`info, _, err = this.Run_ResultOne2()
+	return info, err
+`)
+	}
+	this.buf.WriteString("}\n")
+}
+
+func (this *GoSourceWriter) buildFn_ResultOne2(tName string, info StructType) {
+	this.buf.WriteString(`
+func (this *` + tName + `) ` + this.writeFnDecl("Run_ResultOne2", `info `+info.Name+`, ok bool`) + `
+	this.limit = 1
+	` + info.BuildQueryString(this, `info, ok, `))
+	if this.req.GenMustFn {
+		this.buf.WriteString(`if result.Next() == false {
+		return info, false
+	}
+`)
+	} else {
+		this.buf.WriteString(`if result.Next() == false {
+		return info, false, nil
+	}
+`)
+	}
+	this.buf.WriteString(info.getScanAndParseFnCode(this, "info, false,") + `
+	return info, true`)
+	if this.req.GenMustFn == false {
+		this.buf.WriteString(", nil")
+	}
+	this.buf.WriteString(`
+}
+`)
+}
+
+func (this *GoSourceWriter) buildFn_ResultList(tName string, info StructType) {
+	this.buf.WriteString(`
+func (this *` + tName + `) ` + this.writeFnDecl("Run_ResultList", "list []"+info.Name) + `
+	` + info.BuildQueryString(this, `list,`) + `
+	for result.Next() {
+		var info ` + info.Name + `
+	` + info.isD_CallFillNameList() + info.getScanAndParseFnCode(this, "list,") + `
+		list = append(list, info)
+	}
+	return list` + this.writeStr_IfMustValue_Equal(false, `,nil`) + `
+}`)
+}
+
+func (this *GoSourceWriter) buildFn_ResultMap(tName string, info StructType) {
+	declearMapType := func(startIdx int) string {
+		buf := bytes.NewBuffer(nil)
+		for _, f := range info.FieldList[startIdx:] {
+			if f.IsPrimaryKeyPart == false {
+				break
+			}
+			buf.WriteString("map[" + f.TypeName + "]")
+		}
+		buf.WriteString(info.Name)
+		return buf.String()
+	}
+	this.buf.WriteString(`
+func (this *` + tName + `) ` + this.writeFnDecl("Run_ResultMap", `m `+declearMapType(0)) + `
+	` + info.BuildQueryString(this, `m,`) + `
+	for result.Next() {
+		var info ` + info.Name + `
+` + info.isD_CallFillNameList() + info.getScanAndParseFnCode(this, "nil,") + `
+		` + func() string {
+		buf := bytes.NewBuffer(nil)
+		var lastVarName = "m"
+		for i, f := range info.FieldList {
+			if f.IsPrimaryKeyPart == false {
+				break
+			}
+			buf.WriteString(`if ` + lastVarName + ` == nil {
+` + lastVarName + ` = ` + declearMapType(i) + `{}
+}
+`)
+			tmpVarName := lastVarName + `[info.` + f.FiledName + "]"
+			lastVarName = tmpVarName
+		}
+		buf.WriteString(lastVarName + " = info\n")
+		return buf.String()
+	}() + `
+	}
+	return m` + this.writeStr_IfMustValue_Equal(false, `,nil`) + `
+}
+`)
+}
+
+func (this *GoSourceWriter) buildFn_ResultTotalMatch(tName string, info StructType) {
+	this.buf.WriteString(`func (this *` + tName + `) ` + this.writeFnDecl("Run_ResultListWithTotalMatch", `list []`+info.Name+`, totalMatch int64`) + `
+	` + this.writeStr_IfMustValue_Equal(true, `var err error`) + `	
+	` + info.BuildQueryStringOnConn() + `
+	defer result.Close()
+	for result.Next() {
+		var info ` + info.Name + `
+		` + info.isD_CallFillNameList() + info.getScanAndParseFnCode(this, "list, totalMatch,") + `
+		list = append(list, info)
+	}
+	result.Close()
+		nextQuery := ""
+		if this.supper.mode == korm.InitModeMysql {
+			nextQuery = "select FOUND_ROWS()"
+		} else if this.supper.mode == korm.InitModeSqlite {
+			buf2.Reset()
+			buf2.WriteString("SELECT COUNT(1) ")
+			buf2.WriteString("FROM ` + quoteForSql(info.GetDotName()) + ` " + this.joinNode.TableName + " ")
+			buf2.WriteString(this.` + func() string {
+		if info.IsView {
+			return "query."
+		}
+		return ""
+	}() + `rootInfo.BufLeftJoin.String())
+			buf2.WriteString(this.bufWhere.String())
+			nextQuery = buf2.String()
+		} else {
+			panic("not support")
+		}
+		var result2 *sql.Rows
+		if conn != nil {
+			result2, err = conn.QueryContext(context.Background(), nextQuery)
+		} else {
+			result2, err = this.supper.tx.Query(nextQuery)
+		}
+		` + this.writeCheckErr("nil, 0,") + `
+		defer result2.Close()
+	
+		if result2.Next() == false {
+			panic("MustRun_ResultListWithPageInfo ")
+		}
+		err = result2.Scan(&totalMatch)
+		` + this.writeCheckErr("nil, 0,") + `
+
+	return list, totalMatch` + this.writeStr_IfMustValue_Equal(false, ",nil") + `
+}
+
+`)
 }
 
 const (

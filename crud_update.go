@@ -9,9 +9,6 @@ func (this *GoSourceWriter) AddFunc_ORM_Update(info StructType) {
 	argsWhere []interface{}
 	bufSet   bytes.Buffer
 	argsSet []interface{}
-	orderBy []string
-	limit   int
-	offset  int
 	linkOpList []string
 	isLinkBegin bool
 }

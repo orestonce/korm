@@ -6,9 +6,6 @@ func (this *GoSourceWriter) AddFunc_ORM_Delete(info StructType) {
 	supper *` + ormAllName + `
 	bufWhere bytes.Buffer
 	argsWhere []interface{}
-	bufSet   bytes.Buffer
-	argsSet []interface{}
-	orderBy []string
 	linkOpList []string
 	isLinkBegin bool
 }
