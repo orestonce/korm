@@ -229,9 +229,9 @@ isLinkBegin bool
 linkOpList []string
 }
 func (this *` + ftName + `) ` + fnName + `() *` + fnTypeName + `{
-	isLinkBeginValue := ` + req.isLinkBegin + ` 
-	` + req.isLinkBegin + ` = false
-	return &` + fnTypeName + `{supper: this.supper, isLinkBegin: isLinkBeginValue, linkOpList: ` + req.linkOpList + `}
+	isLinkBeginValue := this.isLinkBegin 
+	this.isLinkBegin = false
+	return &` + fnTypeName + `{supper: this.supper, isLinkBegin: isLinkBeginValue, linkOpList: this.linkOpList}
 }
 `)
 	}
