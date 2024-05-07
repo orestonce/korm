@@ -110,9 +110,12 @@ type indexItem struct {
 }
 
 func indexMysql_Alter(db *sql.DB, tableName string, expectIndexList [][]string, stringOrLongBlobFieldNameList []string) (err error) {
-	indexMapInDb, err := indexGetMysql(db, tableName)
+	indexMapInDb, skip, err := indexGetMysql(db, tableName)
 	if err != nil {
 		return err
+	}
+	if skip {
+		return nil
 	}
 	dropIndexList, addIndexItem := indexDiff(tableName, indexMapInDb, expectIndexList)
 	if len(dropIndexList) == 0 && len(addIndexItem) == 0 {
@@ -166,36 +169,47 @@ func isStringListEq(s1 []string, s2 []string) bool {
 	return true
 }
 
-func indexGetMysql(db *sql.DB, tableName string) (m map[string]indexItem, err error) {
+func indexGetMysql(db *sql.DB, tableName string) (m map[string]indexItem, skip bool, err error) {
 	var rows *sql.Rows
 	rows, err = db.Query("SHOW INDEX FROM `" + tableName + "`")
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer rows.Close()
 
 	m = map[string]indexItem{}
-	for rows.Next() {
-		var Table string
-		var Non_unique int
-		var Key_name string
-		var Seq_in_index int
-		var Column_name string
-		var Collation string
-		var Cardinality string
-		var Sub_part sql.NullString
-		var Packed sql.NullString
-		var Null sql.NullString
-		var Index_type sql.NullString
-		var Comment sql.NullString
-		var Index_comment sql.NullString
-		var Visible sql.NullString
-		var Expression sql.NullString
+	// 遍历 Rows 读取数据
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, false, err
+	}
+	values := make([]interface{}, len(columns))
+	scanArgs := make([]interface{}, len(columns))
+	for i := range values {
+		scanArgs[i] = &values[i]
+	}
 
-		err = rows.Scan(&Table, &Non_unique, &Key_name, &Seq_in_index, &Column_name, &Collation, &Cardinality, &Sub_part, &Packed, &Null, &Index_type, &Comment, &Index_comment, &Visible, &Expression)
+	for rows.Next() {
+		var Key_name string    // *
+		var Column_name string // *
+		err = rows.Scan(scanArgs...)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
+
+		for idx, cnOne := range columns {
+			switch cnOne {
+			case `Key_name`:
+				Key_name = string(values[idx].([]byte))
+			case `Column_name`:
+				Column_name = string(values[idx].([]byte))
+			}
+		}
+
+		if Key_name == "" || Column_name == "" {
+			return nil, true, nil
+		}
+
 		if strings.HasPrefix(Key_name, indexKeyNamePrefix) == false {
 			continue
 		}
@@ -204,7 +218,7 @@ func indexGetMysql(db *sql.DB, tableName string) (m map[string]indexItem, err er
 		item.FieldNameList = append(item.FieldNameList, Column_name)
 		m[item.Name] = item
 	}
-	return m, nil
+	return m, false, nil
 }
 
 const indexKeyNamePrefix = `korm_idx_`
@@ -264,7 +278,7 @@ func indexSqlite_Alter(db *sql.DB, tableName string, expectIndexList [][]string)
 		buf.WriteString(")")
 		_, err = db.Exec(buf.String())
 		if err != nil {
-			fmt.Println(buf.String())
+			fmt.Println("alter", buf.String(), err)
 			return err
 		}
 	}

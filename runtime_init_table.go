@@ -110,14 +110,14 @@ func InitTable(req InitTableReq) (err error) {
 		IsPrimaryKey bool
 	}
 	var fieldListInDb []FieldDefInDb
-	var expectTypeMap map[string]string
+	var expectTypeMap map[string][]string
 
 	if req.Mode == InitModeMysql {
-		expectTypeMap = map[string]string{
-			SqlTypeChar255:  "char(255)",
-			SqlTypeLongBlob: "longblob",
-			SqlTypeBigInt:   "bigint",
-			SqlTypeBool:     "enum('false','true')",
+		expectTypeMap = map[string][]string{
+			SqlTypeChar255:  {"char(255)"},
+			SqlTypeLongBlob: {"longblob"},
+			SqlTypeBigInt:   {"bigint", "bigint(20)"},
+			SqlTypeBool:     {"enum('false','true')"},
 		}
 		var rows *sql.Rows
 		rows, err = req.Db.Query("DESC `" + req.TableName + "`")
@@ -144,11 +144,11 @@ func InitTable(req InitTableReq) (err error) {
 		}
 		rows.Close()
 	} else if req.Mode == InitModeSqlite {
-		expectTypeMap = map[string]string{
-			SqlTypeChar255:  "char(255)",
-			SqlTypeLongBlob: "longblob",
-			SqlTypeBigInt:   "bigint",
-			SqlTypeBool:     "char(255)",
+		expectTypeMap = map[string][]string{
+			SqlTypeChar255:  {"char(255)"},
+			SqlTypeLongBlob: {"longblob"},
+			SqlTypeBigInt:   {"bigint"},
+			SqlTypeBool:     {"char(255)"},
 		}
 		var rows *sql.Rows
 		rows, err = req.Db.Query("pragma table_info(`" + req.TableName + "`)")
@@ -200,9 +200,9 @@ func InitTable(req InitTableReq) (err error) {
 			}
 			found = true
 			foundFieldList[idx] = true
-			expectedType := expectTypeMap[f.Type]
-			if expectedType == "" || def.Type != expectedType {
-				return errors.New("field type changed1 " + f.Name + " " + strconv.Quote(expectedType) + " " + strconv.Quote(def.Type))
+			expectedTypeList := expectTypeMap[f.Type]
+			if isInStringList(def.Type, expectedTypeList) == false {
+				return errors.New("field type changed1 " + f.Name + ". cur: " + strconv.Quote(def.Type) + " expect:" + strconv.Quote(strings.Join(expectedTypeList, ",")))
 			}
 		}
 		if found == false {
@@ -245,7 +245,7 @@ func InitTable(req InitTableReq) (err error) {
 		}
 		_, err = req.Db.Exec(buf.String())
 		if err != nil {
-			fmt.Println("korm alter column sql: " + buf.String())
+			fmt.Println("korm alter column sql: "+buf.String(), err)
 			return err
 		}
 	}
