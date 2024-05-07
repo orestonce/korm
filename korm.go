@@ -419,7 +419,7 @@ func createCodeQuery(req createCodeQuery_Req) string {
 }
 
 func (this *GoSourceWriter) MustParsePkg(req MustCreateCode_Req) {
-	pkgs, err := parser.ParseDir(token.NewFileSet(), req.ModelPkgDir, nil, parser.AllErrors)
+	pkgs, err := parser.ParseDir(token.NewFileSet(), req.ModelPkgDir, nil, parser.DeclarationErrors)
 	if err != nil {
 		panic(err)
 	}

@@ -163,18 +163,25 @@ type AddWhereAllField_Req struct {
 }
 
 func (this *GoSourceWriter) AddWhereAllField(info StructType, name string, isLeftJoinPart bool, needTableName bool) {
-	this.AddWhereAllFieldL1(info, name, isLeftJoinPart, func(fieldName string) string {
+	this.AddWhereAllFieldL1(info, name, isLeftJoinPart, func(fieldName string, fnName string) string {
 		buf := bytes.NewBuffer(nil)
-		buf.WriteString("this.bufWhere.WriteString(")
-		if needTableName {
-			buf.WriteString("this.joinNode.TableName+`.`+")
+		buf.WriteString("this.supper.bufWhere.WriteString(")
+		if fnName != "" {
+			buf.WriteString(`"` + fnName + `(" + `)
 		}
-		buf.WriteString(`"` + quoteForSql(fieldName) + ` ")` + "\n")
+		if needTableName {
+			buf.WriteString("this.supper.joinNode.TableName+`.`+")
+		}
+		buf.WriteString(`"` + quoteForSql(fieldName))
+		if fnName != "" {
+			buf.WriteString(`)`)
+		}
+		buf.WriteString(` ")` + "\n")
 		return buf.String()
 	})
 }
 
-func (this *GoSourceWriter) AddWhereAllFieldL1(info StructType, name string, isLeftJoinPart bool, fnWField func(fieldName string) string) {
+func (this *GoSourceWriter) AddWhereAllFieldL1(info StructType, name string, isLeftJoinPart bool, fnWField func(fieldName string, fnName string) string) {
 	req := AddWhereAllField_Req{
 		isLinkBegin: "this.isLinkBegin",
 		linkOpList:  "this.linkOpList",
@@ -193,33 +200,38 @@ func (this *GoSourceWriter) AddWhereAllFieldL1(info StructType, name string, isL
 	this.ChangeLinkOpEnd(name, req)
 }
 
-func (this *GoSourceWriter) FiledOp_AddWhere(name string, f StructFieldType, req AddWhereAllField_Req, fnWField func(fieldName string) string) {
+func (this *GoSourceWriter) FiledOp_AddWhere(name string, f StructFieldType, req AddWhereAllField_Req, fnWField func(fieldName string, fnName string) string) {
 	ftNameLink := prefix + `Where_` + name
 	ftName := ftNameLink + `_` + f.FiledName
 
-	//	callAndTableName := func() string {
-	//		if needTableName == false {
-	//			return ""
-	//		}
-	//		return `this.bufWhere.WriteString(` + strconv.Quote("`") + "+this.joinNode.TableName+" + strconv.Quote("`.") + `)
-	//`
-	//	}
-	//` + callAndTableName() + `this.bufWhere.WriteString("` + quoteForSql(f.FiledName) + ` ")
 	writeTypeAndCond := func() {
 		this.buf.WriteString(`type ` + ftName + ` struct{
 supper *` + name + `
+isLinkBegin bool
+linkOpList []string
 }
 func (this *` + name + `) Where` + `_` + f.FiledName + `() *` + ftName + `{
-	if this.bufWhere.Len() > 0 {
-		if ` + req.isLinkBegin + ` == false {
-			this.bufWhere.WriteString(` + req.linkOpList + `[0] + " ")
-		}
-	} else {
-		this.bufWhere.WriteString("WHERE ")
-	}
-	` + fnWField(f.FiledName) + `
+	isLinkBeginValue := ` + req.isLinkBegin + ` 
 	` + req.isLinkBegin + ` = false
-	return &` + ftName + `{supper: this}
+	return &` + ftName + `{supper: this, isLinkBegin: isLinkBeginValue, linkOpList: ` + req.linkOpList + `}
+}
+`)
+	}
+	var fnName string
+	var fnNameInSql string
+	var fnTypeName string
+
+	writeTypeFunc := func() {
+		fnTypeName = ftName + "_" + fnName
+		this.buf.WriteString(`type ` + fnTypeName + ` struct{
+supper *` + name + `
+isLinkBegin bool
+linkOpList []string
+}
+func (this *` + ftName + `) ` + fnName + `() *` + fnTypeName + `{
+	isLinkBeginValue := ` + req.isLinkBegin + ` 
+	` + req.isLinkBegin + ` = false
+	return &` + fnTypeName + `{supper: this.supper, isLinkBegin: isLinkBeginValue, linkOpList: ` + req.linkOpList + `}
 }
 `)
 	}
@@ -227,8 +239,33 @@ func (this *` + name + `) Where` + `_` + f.FiledName + `() *` + ftName + `{
 	argsName := f.FiledName
 	addFn := func(op string, sqlStr string) {
 		this.buf.WriteString(`func (this *` + ftName + `)` + op + `(` + f.FiledName + ` ` + f.TypeName + `) *` + name + ` {
+	if this.supper.bufWhere.Len() > 0 {
+		if this.isLinkBegin == false {
+			this.supper.bufWhere.WriteString(this.linkOpList[0] + " ")
+		}
+	} else {
+		this.supper.bufWhere.WriteString("WHERE ")
+	}
+	` + fnWField(f.FiledName, "") + `
 	` + declStr + `this.supper.bufWhere.WriteString("` + sqlStr + ` ")
 	` + req.argsWhere + ` = append(` + req.argsWhere + `, ` + argsName + `)
+	return this.supper
+}
+`)
+	}
+
+	addFnFunc := func(op string, sqlStr string) {
+		this.buf.WriteString(`func (this *` + fnTypeName + `)` + op + `(` + fnNameInSql + ` int) *` + name + ` {
+	if this.supper.bufWhere.Len() > 0 {
+		if this.isLinkBegin == false {
+			this.supper.bufWhere.WriteString(this.linkOpList[0] + " ")
+		}
+	} else {
+		this.supper.bufWhere.WriteString("WHERE ")
+	}
+	` + fnWField(f.FiledName, fnNameInSql) + `
+	` + declStr + `this.supper.bufWhere.WriteString("` + sqlStr + ` ")
+	` + req.argsWhere + ` = append(` + req.argsWhere + `, ` + fnNameInSql + `)
 	return this.supper
 }
 `)
@@ -275,6 +312,18 @@ return this.supper
 		addFn("GreaterOrEqual", ">=?")
 		addFn("Less", "<?")
 		addFn("LessOrEqual", "<=?")
+	case "[]byte":
+		writeTypeAndCond()
+	}
+	if f.TypeName == "string" || f.TypeName == "[]byte" {
+		fnName = "Length"
+		fnNameInSql = "length"
+		writeTypeFunc()
+		addFnFunc("Equal", "=?")
+		addFnFunc("NotEqual", "!=?")
+		addFnFunc("GreaterOrEqual", ">=?")
+		addFnFunc("Less", "<?")
+		addFnFunc("LessOrEqual", "<=?")
 	}
 }
 
