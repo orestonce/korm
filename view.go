@@ -63,14 +63,17 @@ func (this *` + info.GetOrmTypeName() + `) Select() *` + info.GetOrmSubType_Sele
 `)
 	tName := info.GetOrmSubType_SelectName()
 	this.AddWhereAllFieldL1(info, tName, false, func(fieldName string, fnName string) string {
-		_, fieldName2 := info.View_getQueryNode_ByFieldName(fieldName)
+		nodeName, fieldName2 := info.View_getQueryNode_ByFieldName2(fieldName)
+		if nodeName != "" {
+			nodeName = nodeName + "."
+		}
 
 		buf := bytes.NewBuffer(nil)
 		buf.WriteString("this.supper.bufWhere.WriteString(")
 		if fnName != "" {
 			buf.WriteString(`"` + fnName + `(" + `)
 		}
-		buf.WriteString("this.supper.joinNode.TableName+`.`+")
+		buf.WriteString("this.supper." + nodeName + "joinNode.TableName+`.`+")
 		buf.WriteString(`"` + quoteForSql(fieldName2))
 		if fnName != "" {
 			buf.WriteString(")")

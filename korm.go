@@ -91,6 +91,23 @@ func (info StructType) View_getQueryNode_ByFieldName(fn string) (nodeName string
 	panic("getQueryNode_ByFieldName " + fn)
 }
 
+func (info StructType) View_getQueryNode_ByFieldName2(fn string) (nodeName string, fieldName2 string) {
+	for _, one := range info.FieldList {
+		if fn != one.FiledName {
+			continue
+		}
+		if len(one.ViewJoinPath) == 0 { // 自己这一级的, 未改名
+			return "", one.FiledName
+		} else if len(one.ViewJoinPath) == 1 { // 自己这一级的, 已改名
+			return "", one.ViewJoinPath[0]
+		}
+		call := one.ViewGetJoinObj_CallDeclear()
+		varName := info.View_HasCallMap[call]
+		return varName, one.ViewJoinPath[len(one.ViewJoinPath)-1]
+	}
+	panic("getQueryNode_ByFieldName " + fn)
+}
+
 func (t StructType) GetOrmTypeName() string {
 	return prefix + t.Name
 }
